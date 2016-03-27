@@ -13,8 +13,6 @@ class Product extends Type {
 	constructor(...args) {
 		if (args.length === 0) {
 			return unit;
-		} else if (args.length === 1) {
-			return new Singleton(args[0]);
 		}
 
 		args.forEach(x => { // todo optional typechecking
@@ -37,8 +35,6 @@ class Union extends Type {
 	constructor(...args) {
 		if (args.length === 0) {
 			throw `Cannot construct empty union.`;
-		} else if (args.length === 1) {
-			return new Singleton(args[0]);
 		}
 
 		args.forEach(x => {
@@ -57,20 +53,8 @@ class Union extends Type {
 	}
 }
 
-class Singleton extends Type {
-	constructor(t) {
-		if (!isType(t)) {
-			throw `${t} is of incorrect type`;
-		}
-
-		super();
-		this.items = [t];
-		this.type = 'Singleton';
-	}
-
-	toString() {
-		return `Singleton(${this.items.map(v => typeof v === 'string' ? JSON.stringify(v) : v.toString())[0].toString()})`;
-	}
+function isSingleton(t) {
+	return t instanceof Product && t.items.length === 1;
 }
 
 // todo "Label" type or similar, which must not be possible to use to get around restrictions
@@ -80,10 +64,9 @@ function Maybe(t) {
 }
 
 
-// need an end-of-list value, to have Maybe([a]) able to store the empty list.
-// so mu => {let r = new Union('v__end_of_list', new Product(t, mu)); r.isList = true; return r;}
 function List(t) { // we are eventually going to need first-class lists, I expect... or just a list label?
-	return mu => new Maybe(new Product(t, mu));
+	//return mu => new Maybe(new Product(t, mu));
+	return mu => {let r = new Union('v__empty_list', new Product(t, mu)); r.isList = true; return r;};
 }
 
 
@@ -93,6 +76,13 @@ function recur(t, f) {
 	t.items = t.items.map(f);
 }
 
+function resolve(t, n) {
+	while (typeof t === 'function') {
+		t = t(n);
+	}
+	return t;
+}
+
 class Def {
 	constructor(name, t) {
 		if (typeof name !== 'string') {
@@ -100,7 +90,7 @@ class Def {
 		}
 
 		if (typeof t === 'function') {
-			t = t(name);
+			t = resolve(t, name);
 		}
 
 		if (!(t instanceof Type) || t === unit) {
@@ -151,8 +141,8 @@ function build(...defs) {
 
 	function setMu(t) {
 		if (typeof t === 'function') {
-			const n = newName();
-			t = t(n);
+			const n = newName(); // todo consistent n vs name naming
+			t = resolve(t, n);
 			defs.push(new Def(n, t));
 			return n;
 		}
@@ -205,17 +195,15 @@ function build(...defs) {
 
 			if (itemset.size === 0) {
 				throw 'After expanding unions, some union is empty'; // not sure this is even reachable
-			} else if (itemset.size === 1) {
-				types.set(key, new Singleton(itemset.values().next().value));
 			} else {
 				val.items = Array.from(itemset);
 			}
 		});
 	}
 
-	// check for cycles in unions/singletons
+	// check for cycles in unions/singletons - todo this maybe belongs in mkGen
 	for (let [key, val] of types) {
-		if (!(val instanceof Union) && !(val instanceof Singleton)) {
+		if (!(val instanceof Union) && !isSingleton(val)) {
 			continue;
 		}
 
@@ -227,9 +215,7 @@ function build(...defs) {
 				throw 'Encountered union or singleton containing itself after expansion';
 			}
 			let t = types.get(n);
-			if (t instanceof Singleton) {
-				check(t.items[0]);
-			} else if (t instanceof Union) {
+			if (t instanceof Union || isSingleton(t)) {
 				t.items.forEach(check);
 			}
 		}
@@ -238,22 +224,16 @@ function build(...defs) {
 
 	// todo reduce duplication, remove unreachable types and types which produce nothing
 
-	for (let t of types.values()) {
-		let seen = new Set([t]);
-		while (t instanceof Singleton) {
-			t = t.items[0];
-			if (seen.has(t)) {
-				throw `Cyclic singletons`; // todo probably just remove during unreachable phase, honestly
-			}
-		}
-	}
+	// todo remove cycles of singletons or aliases, ideally as part of removing types which produce nothing
+	// todo alias types? which get removed in full
+	// check for type names without bindings
 
 	return Array.from(types).filter(v => v[0] !== 'unit').map(v => new Def(...v));
 }
 
 
 console.log(build(
-	new Def('t_0', mu => mu2 => new Product(mu, mu2))
+	new Def('t_0', new List(new Union('v_0', 'v_1')))
 	//new Def('t_1', mu => new Union(unit, new Union('v_0', new Product(unit, mu))))
 	//new Def('t_0', new List(new Product('v_1', 'v_2')))
 	// new Def('t_0', new Union(unit, 'v_0')),
@@ -262,4 +242,7 @@ console.log(build(
 	// new Def('t_3', new Product('v_3', new List('t_3')))
 	//new Def('t_0', new Union('v_1', 'v_1'))
 ).map(t => t.toString()).join('\n'));
+
+
+
 
