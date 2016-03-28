@@ -241,7 +241,6 @@ function build(...defs) {
 
 // takes a list of [val, weight] pairs and picks a value with probability proportional to its weight
 function choose(choices) {
-	console.log(choices)
 	let total = 0;
 	choices.forEach(([_, w]) => {total += w});
 	if (total === 0) return null;
@@ -258,12 +257,9 @@ function makeGen(types) {
 	let table = new Map;
 	
 	function f_name(t_name, n) {
-		console.log(`f_name(${t_name}, ${n}))`);
-		//console.trace();
 		if (t_name === 'unit' || t_name.slice(0, 2) === 'v_') {
 			return n === 1 ? 1 : 0;
 		}
-		console.log(`fing ${t_name},${types.get(t_name)}`);
 		return f_type(types.get(t_name), n);
 	}
 
@@ -295,7 +291,6 @@ function makeGen(types) {
 				if (t instanceof Product) {
 					// todo special-case if any child is a value type or unit, possibly
 					let subProd = new Product(...t.items.slice(1));
-					console.log(subProd)
 					for (let i = 1; i < n; ++i) {
 						sum += f_name(t.items[0], i) * f_type(subProd, n - i);
 					}
@@ -314,7 +309,6 @@ function makeGen(types) {
 		if (t_name === 'unit' || t_name.slice(0, 2) === 'v_') {
 			return n === 1 ? t_name : null;
 		}
-		console.log(`ging ${t_name}`);
 		return generate_type(types.get(t_name), n);
 	}
 
@@ -323,17 +317,23 @@ function makeGen(types) {
 			throw 'g: Undefined type??? Should have been caught earlier...';
 		}
 
+		//console.log('a', t.toString(), n)
 		if (t instanceof Product) {
 			if (t.items.length === 1) {
+				//console.log('b', t.items[0], n)
 				return new Product(generate_name(t.items[0], n));
 			}
 
 			let choices = [];
+			let subProd = new Product(...t.items.slice(1));
 			for (let i = 1; i < n; ++i) {
-				choices.push([i, f_name(t.items[0], i)]);
+				choices.push([i, f_name(t.items[0], i) * f_type(subProd, n - i)]);
 			}
 			const split = choose(choices);
+			//console.log('d', choices, split, n, t.toString())
+			//console.log(table)
 			if (split === null) return null;
+			//console.log('c', n, split, new Product(...t.items.slice(1)).toString())
 			const head = generate_name(t.items[0], split);
 			const tail = generate_type(new Product(...t.items.slice(1)), n - split);
 			return new Product(head, ...tail.items);
@@ -357,14 +357,15 @@ function makeGen(types) {
 
 
 let S = build(
+	new Def('t_start', new Product('t_0', 't_0', 't_0')),
 	new Def('t_0', new List(new Union('v_0', 'v_1')))
 );
 
-console.log(S)
+//console.log(S)
 
 let G = makeGen(S);
 
-console.log(G('t_0', 3).toString());
+console.log(G('t_start', 5).toString());
 
-console.log(G.table)
+//console.log(G.table)
 
