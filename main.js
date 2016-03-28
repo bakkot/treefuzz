@@ -1,5 +1,8 @@
 "use strict";
 
+Array.prototype.includes = function(x){return this.indexOf(x) !== -1;};
+
+
 class Type {}
 const unit = new Type;
 unit.toString = ()=>'unit';
@@ -54,7 +57,7 @@ class Union extends Type {
 }
 
 function isSingleton(t) {
-	return t instanceof Product && t.items.length === 1;
+	return (t instanceof Product || t instanceof Union) && t.items.length === 1;
 }
 
 // todo "Label" type or similar, which must not be possible to use to get around restrictions
@@ -64,6 +67,7 @@ function Maybe(t) {
 }
 
 
+// todo metadata
 function List(t) { // we are eventually going to need first-class lists, I expect... or just a list label?
 	//return mu => new Maybe(new Product(t, mu));
 	return mu => {let r = new Union('v__empty_list', new Product(t, mu)); r.isList = true; return r;};
@@ -228,21 +232,139 @@ function build(...defs) {
 	// todo alias types? which get removed in full
 	// check for type names without bindings
 
-	return Array.from(types).filter(v => v[0] !== 'unit').map(v => new Def(...v));
+	//return Array.from(types).filter(v => v[0] !== 'unit').map(v => new Def(...v));
+	return types;
 }
 
 
-console.log(build(
+
+
+// takes a list of [val, weight] pairs and picks a value with probability proportional to its weight
+function choose(choices) {
+	console.log(choices)
+	let total = 0;
+	choices.forEach(([_, w]) => {total += w});
+	if (total === 0) return null;
+	let r = Math.random();
+	for (let i = 0; i < choices.length; ++i) {
+		const t = choices[i][1] / total;
+		if (r < t) return choices[i][0];
+		r -= t;
+	}
+	throw 'unreachable';
+}
+
+function makeGen(types) {
+	let table = new Map;
+	
+	function f_name(t_name, n) {
+		console.log(`f_name(${t_name}, ${n}))`);
+		//console.trace();
+		if (t_name === 'unit' || t_name.slice(0, 2) === 'v_') {
+			return n === 1 ? 1 : 0;
+		}
+		console.log(`fing ${t_name},${types.get(t_name)}`);
+		return f_type(types.get(t_name), n);
+	}
+
+	function f_type(t, n) {
+		if (n === 0) {
+			throw 'No empty types!';
+		}
+
+		if (t === undefined) {
+			throw 'Undefined type??? Should have been caught earlier...';
+		}
+
+		const sig = t.toString();
+		let t_table = table.get(sig);
+		if (t_table === undefined) {
+			t_table = [0];
+			table.set(sig, t_table);
+		}
+
+		if (t_table[n] === null) {
+			throw 'Encountered cycle! This should have been prevented earlier';
+		}
+		if (t_table[n] === undefined) {
+			t_table[n] = null;
+			if (isSingleton(t)) {
+				t_table[n] = f_name(t.items[0], n);
+			} else {
+				let sum = 0;
+				if (t instanceof Product) {
+					// todo special-case if any child is a value type or unit, possibly
+					let subProd = new Product(...t.items.slice(1));
+					console.log(subProd)
+					for (let i = 1; i < n; ++i) {
+						sum += f_name(t.items[0], i) * f_type(subProd, n - i);
+					}
+				} else {
+					// assert t instanceof Union;
+					t.items.forEach(item => {sum += f_name(item, n);});
+				}
+				t_table[n] = sum;
+			}
+		}
+		return t_table[n];
+	}
+
+
+	function generate_name(t_name, n) {
+		if (t_name === 'unit' || t_name.slice(0, 2) === 'v_') {
+			return n === 1 ? t_name : null;
+		}
+		console.log(`ging ${t_name}`);
+		return generate_type(types.get(t_name), n);
+	}
+
+	function generate_type(t, n) {
+		if (t === undefined) {
+			throw 'g: Undefined type??? Should have been caught earlier...';
+		}
+
+		if (t instanceof Product) {
+			if (t.items.length === 1) {
+				return new Product(generate_name(t.items[0], n));
+			}
+
+			let choices = [];
+			for (let i = 1; i < n; ++i) {
+				choices.push([i, f_name(t.items[0], i)]);
+			}
+			const split = choose(choices);
+			if (split === null) return null;
+			const head = generate_name(t.items[0], split);
+			const tail = generate_type(new Product(...t.items.slice(1)), n - split);
+			return new Product(head, ...tail.items);
+		} else {
+			if (!(t instanceof Union)) throw `Neither Product nor Union`;
+
+			if (t.items.length === 1) {
+				return generate_name(t.items[0], n);
+			}
+			const choices = t.items.map((s, i) => [i, f_name(s, n)]);
+			const index = choose(choices);
+			if (index === null) return null;
+			return generate_name(t.items[index], n);
+		}
+	}
+
+	generate_name.table = table;
+
+	return generate_name;
+}
+
+
+let S = build(
 	new Def('t_0', new List(new Union('v_0', 'v_1')))
-	//new Def('t_1', mu => new Union(unit, new Union('v_0', new Product(unit, mu))))
-	//new Def('t_0', new List(new Product('v_1', 'v_2')))
-	// new Def('t_0', new Union(unit, 'v_0')),
-	// new Def('t_1', new Union('v_1', new Product(unit, 't_1'), unit, 't_0')),
-	// new Def('t_2', new Union(unit, 'v_2')),
-	// new Def('t_3', new Product('v_3', new List('t_3')))
-	//new Def('t_0', new Union('v_1', 'v_1'))
-).map(t => t.toString()).join('\n'));
+);
 
+console.log(S)
 
+let G = makeGen(S);
 
+console.log(G('t_0', 3).toString());
+
+console.log(G.table)
 
