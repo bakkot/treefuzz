@@ -1,0 +1,30 @@
+{
+  "name": "treefuzz",
+  "version": "0.0.1",
+  "description": "Randomly generate typed trees of particular sizes",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/bakkot/treefuzz.git"
+  },
+  "keywords": [
+    "fuzz",
+    "generate",
+    "tree",
+    "type"
+  ],
+  "author": "Kevin Gibbons <bakkot@gmail.com> (http://bakkot.com)",
+  "license": "BSD-3-Clause",
+  "bugs": {
+    "url": "https://github.com/bakkot/treefuzz/issues"
+  },
+  "homepage": "https://github.com/bakkot/treefuzz#readme",
+  "devDependencies": {
+    "shift-ast": "^3.1.0",
+    "shift-codegen": "^4.0.3",
+    "shift-spec": "^2015.2.1"
+  }
+}
