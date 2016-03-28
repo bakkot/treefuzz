@@ -13,7 +13,7 @@ function isType(t, allowRecursive = true) {
 }
 
 class Product extends Type {
-	constructor(...args) {
+	constructor(args, meta = {}) {
 		if (args.length === 0) {
 			return unit;
 		}
@@ -26,7 +26,7 @@ class Product extends Type {
 
 		super();
 		this.items = args;
-		this.type = 'Product';
+		this.meta = meta;
 	}
 
 	toString() {
@@ -35,7 +35,7 @@ class Product extends Type {
 }
 
 class Union extends Type {
-	constructor(...args) {
+	constructor(args, meta = {}) {
 		if (args.length === 0) {
 			throw `Cannot construct empty union.`;
 		}
@@ -48,7 +48,7 @@ class Union extends Type {
 
 		super();
 		this.items = args;
-		this.type = 'Union';
+		this.meta = {};
 	}
 
 	toString() {
@@ -63,14 +63,14 @@ function isSingleton(t) {
 // todo "Label" type or similar, which must not be possible to use to get around restrictions
 
 function Maybe(t) {
-	return new Union(unit, t);
+	return new Union([unit, t]);
 }
 
 
 // todo metadata
 function List(t) { // we are eventually going to need first-class lists, I expect... or just a list label?
 	//return mu => new Maybe(new Product(t, mu));
-	return mu => {let r = new Union('v__empty_list', new Product(t, mu)); r.isList = true; return r;};
+	return mu => new Union(['v__empty_list', new Product([t, mu], {isList: true})]);
 }
 
 
@@ -100,6 +100,8 @@ class Def {
 		if (!(t instanceof Type) || t === unit) {
 			throw 'The type of a definition must be a Type (other than unit)'
 		}
+
+		t.meta.name = name;
 
 		this.name = name;
 		this.t = t;
@@ -290,7 +292,7 @@ function makeGen(types) {
 				let sum = 0;
 				if (t instanceof Product) {
 					// todo special-case if any child is a value type or unit, possibly
-					let subProd = new Product(...t.items.slice(1));
+					let subProd = new Product(t.items.slice(1));
 					for (let i = 1; i < n; ++i) {
 						sum += f_name(t.items[0], i) * f_type(subProd, n - i);
 					}
@@ -317,26 +319,21 @@ function makeGen(types) {
 			throw 'g: Undefined type??? Should have been caught earlier...';
 		}
 
-		//console.log('a', t.toString(), n)
 		if (t instanceof Product) {
 			if (t.items.length === 1) {
-				//console.log('b', t.items[0], n)
-				return new Product(generate_name(t.items[0], n));
+				return new Product([generate_name(t.items[0], n)], t.meta);
 			}
 
 			let choices = [];
-			let subProd = new Product(...t.items.slice(1));
+			let subProd = new Product(t.items.slice(1));
 			for (let i = 1; i < n; ++i) {
 				choices.push([i, f_name(t.items[0], i) * f_type(subProd, n - i)]);
 			}
 			const split = choose(choices);
-			//console.log('d', choices, split, n, t.toString())
-			//console.log(table)
 			if (split === null) return null;
-			//console.log('c', n, split, new Product(...t.items.slice(1)).toString())
 			const head = generate_name(t.items[0], split);
-			const tail = generate_type(new Product(...t.items.slice(1)), n - split);
-			return new Product(head, ...tail.items);
+			const tail = generate_type(new Product(t.items.slice(1)), n - split);
+			return new Product([head, ...tail.items], t.meta);
 		} else {
 			if (!(t instanceof Union)) throw `Neither Product nor Union`;
 
@@ -357,15 +354,38 @@ function makeGen(types) {
 
 
 let S = build(
-	new Def('t_start', new Product('t_0', 't_0', 't_0')),
-	new Def('t_0', new List(new Union('v_0', 'v_1')))
+	new Def('t_start', new Product(['t_0', 't_0', 't_0'])),
+	new Def('t_0', new List(new Union(['v_0', 'v_1'])))
 );
 
 //console.log(S)
 
 let G = makeGen(S);
 
-console.log(G('t_start', 5).toString());
+
+function toList(v) {
+	let list = [];
+	while (v !== 'v__empty_list') {
+		list.push(v.items[0]);
+		v = v.items[1];
+	}
+	return list;
+}
+
+function toTree(v) {
+	if (v === 'v__empty_list') {
+		return [];
+	}
+	if (v.meta.isList) {
+		return toList(v);
+	}
+	if (v.meta.name === 't_start') {
+		return {a: toTree(v.items[0]), b: toTree(v.items[1]), c: toTree(v.items[2])};
+	}
+	throw 'not reached';
+}
+
+console.log(JSON.stringify(toTree(G('t_start', 50)), null, ''));
 
 //console.log(G.table)
 
